@@ -18,7 +18,7 @@
 
 MemoryManager::MemoryManager( int memSize )
 {
-	if (memSize < 4) {
+	if (memSize <= 4) {
 		abort();
 	}
 
@@ -32,17 +32,20 @@ MemoryManager::MemoryManager( int memSize )
 	this->last_ = this->head_;
 
 	// The following is for testing:
+#ifdef _DEBUG
+	this->request(7*4);
+#endif
 }
 
 
 MemoryManager::~MemoryManager(void)
 {
-
+	free(this->memory_);
 }
 
 int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*/ )
 {
-	int words = (size + (size % 4))/4; // Round to the nearest factor of 4 and then convert to words
+	int words = (size + (size % 4))/4; // Ceil to the nearest factor of 4 and then convert to words
 
 	int *location = (int*)0xDEADBEEF;
 	int *current = this->head_;
@@ -50,9 +53,35 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	{
 	case NEXT_FIT:
 		// Next-fit algorithm starts off at the last place we looked
+		// We need to cycle through until we reach our original, if we didn't find a suitable hole
 		current = this->last_;
+		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+			int *successor = hole_get_successor(current);
+			if (successor == current) {
+				// We reached the end! Start at beginning
+				current = this->head_;
+				while (current != this->last_ && hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+					current = hole_get_successor(current);
+				}
+			} else {
+				current = successor;
+			}
+		}
+		if (hole_get_tag(current) == HOLE_ALLOCATED || current == this->last_) {
+			// No space available!
+			return NULL;
+		} else {
+			location = current;
+		}
+		break;
 	case FIRST_FIT:
 		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+			int *successor = hole_get_successor(current);
+			if (successor == current) {
+				// We reached the end!
+				return NULL;
+			}
+
 			current = hole_get_successor(current);
 		}
 		if (hole_get_tag(current) == HOLE_ALLOCATED) {
@@ -99,19 +128,27 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	// Now destroy it
 	this->destroyHole(location);
 
-	// Write the two new holes: 1 allocated, 1 free
+	// Write the two new holes: 1 allocated, 1 free (if possible)
 	int *allocated_hole = location;
+
+	// Make sure we actually have space for a free hole;
 	int *free_hole = location + METADATA_SIZE + words;
+	if (free_hole > this->memory_ + this->size_ - METADATA_SIZE) {
+		free_hole = allocated_hole;
+	}
+
 	this->writeHole(allocated_hole, predecessor, words, HOLE_ALLOCATED, free_hole);
 
-	// If the original hole's successor is before this free hole, then it was referring to itself.
-	if (successor < free_hole) {
-		successor = free_hole;
+	if (free_hole != allocated_hole) {
+		// If the original hole's successor is before this free hole, then it was referring to itself.
+		if (successor < free_hole) {
+			successor = free_hole;
+		}
+		this->writeHole(free_hole, allocated_hole, original_size - words - METADATA_SIZE, HOLE_FREE, successor);
 	}
-	this->writeHole(free_hole, allocated_hole, original_size - words - METADATA_SIZE, HOLE_FREE, successor);
 
 	// For use with next-fit algorithm
-	this->last_ = free_hole;
+	this->last_ = allocated_hole;
 
 	return allocated_hole;
 }
@@ -149,3 +186,39 @@ void MemoryManager::destroyHole(int *location)
 		*(location + i) = 0xDEADBEEF;
 	}
 }
+
+char *MemoryManager::toString()
+{
+	char *buffer = (char *) calloc(sizeof(int)*3, this->size_);
+	for (int i = 0; i < this->size_; i++) {
+		char number[256];
+		sprintf_s(number, 256, "%d", *(this->memory_ + i));
+		sprintf_s(buffer + strlen(buffer), strlen(number) + 4, "%s, ", number);
+	}
+
+	*(buffer + strlen(buffer) - 2) = '\0';
+
+	return buffer;
+}
+
+extern "C" {
+	__declspec(dllexport) MemoryManager *memory_manager_new(int memSize) 
+	{ 
+		return new MemoryManager(memSize); 
+	}
+
+	__declspec(dllexport) int *memory_manager_request(MemoryManager *manager, unsigned int size, MemoryManager::Strategy strategy = MemoryManager::Strategy::FIRST_FIT) 
+	{ 
+		return manager->request(size, strategy); 
+	}
+
+	__declspec(dllexport) void memory_manager_release(MemoryManager *manager, int *hole)
+	{
+		manager->release(hole);
+	}
+
+	__declspec(dllexport) char *memory_manager_to_string(MemoryManager *manager)
+	{
+		return manager->toString();
+	}
+};

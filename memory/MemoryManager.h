@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #define HOLE_ALLOCATED		1
 #define HOLE_FREE			0
 
@@ -23,6 +25,8 @@ public:
 	int *request(unsigned int size, Strategy strategy = FIRST_FIT);
 	void release(int *hole);
 
+	char *toString();
+
 private:
 	
 	// This does not error check! You may overwrite existing holes.
@@ -37,4 +41,3 @@ private:
 	int *memory_;	// In all its glory.
 	int size_;
 };
-
