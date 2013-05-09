@@ -29,6 +29,7 @@ MemoryManager::MemoryManager( int memSize )
 	// Allocate a free hole memSize - 4
 	writeHole(this->memory_, this->memory_, memSize - METADATA_SIZE, HOLE_FREE, this->memory_);
 	this->head_ = this->memory_;
+	this->last_ = this->head_;
 	this->request(4);
 	this->request(4);
 }
@@ -47,6 +48,9 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	int *current = this->head_;
 	switch (strategy) 
 	{
+	case NEXT_FIT:
+		// Next-fit algorithm starts off at the last place we looked
+		current = this->last_;
 	case FIRST_FIT:
 		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
 			current = hole_get_successor(current);
@@ -56,8 +60,6 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		} else {
 			location = current;
 		}
-		break;
-	case NEXT_FIT:
 		break;
 	case BEST_FIT:
 		break;
@@ -85,6 +87,9 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		successor = free_hole;
 	}
 	this->writeHole(free_hole, allocated_hole, original_size - words - METADATA_SIZE, HOLE_FREE, successor);
+
+	// For use with next-fit algorithm
+	this->last_ = free_hole;
 
 	return allocated_hole;
 }
