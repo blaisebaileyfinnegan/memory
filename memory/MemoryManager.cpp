@@ -63,26 +63,27 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		}
 		break;
 	case BEST_FIT:
-		// Best-fit allocates the smallest possible free hole
-		// We need to do a linear search across all holes and keep track of the smallest one
-		int *min_hole_location = NULL;
-		int min_hole_size = INT_MAX;
-		while (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
-			int currentSize = hole_get_size(current);
-			if (currentSize < min_hole_size) {
-				min_hole_location = current;
-				min_hole_size = currentSize;
+		{
+			// Best-fit allocates the smallest possible free hole
+			// We need to do a linear search across all holes and keep track of the smallest one
+			int *min_hole_location = NULL;
+			int min_hole_size = INT_MAX;
+			while (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
+				int currentSize = hole_get_size(current);
+				if (currentSize < min_hole_size) {
+					min_hole_location = current;
+					min_hole_size = currentSize;
+				}
+
+				current = hole_get_successor(current);
 			}
-
-			current = hole_get_successor(current);
+			if (!min_hole_location || hole_get_tag(min_hole_location) == HOLE_ALLOCATED) {
+				// No space available!
+				return NULL;
+			} else {
+				location = min_hole_location;
+			}
 		}
-		if (!min_hole_location || hole_get_tag(min_hole_location) == HOLE_ALLOCATED) {
-			// No space available!
-			return NULL;
-		} else {
-			location = min_hole_location;
-		}
-
 		break;
 	case WORST_FIT:
 		break;
