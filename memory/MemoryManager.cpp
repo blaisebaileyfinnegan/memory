@@ -30,8 +30,8 @@ MemoryManager::MemoryManager( int memSize )
 	writeHole(this->memory_, this->memory_, memSize - METADATA_SIZE, HOLE_FREE, this->memory_);
 	this->head_ = this->memory_;
 	this->last_ = this->head_;
-	this->request(4);
-	this->request(4);
+
+	// The following is for testing:
 }
 
 
@@ -56,12 +56,33 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 			current = hole_get_successor(current);
 		}
 		if (hole_get_tag(current) == HOLE_ALLOCATED) {
-			abort();
+			// No space available!
+			return NULL;
 		} else {
 			location = current;
 		}
 		break;
 	case BEST_FIT:
+		// Best-fit allocates the smallest possible free hole
+		// We need to do a linear search across all holes and keep track of the smallest one
+		int *min_hole_location = NULL;
+		int min_hole_size = INT_MAX;
+		while (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
+			int currentSize = hole_get_size(current);
+			if (currentSize < min_hole_size) {
+				min_hole_location = current;
+				min_hole_size = currentSize;
+			}
+
+			current = hole_get_successor(current);
+		}
+		if (!min_hole_location || hole_get_tag(min_hole_location) == HOLE_ALLOCATED) {
+			// No space available!
+			return NULL;
+		} else {
+			location = min_hole_location;
+		}
+
 		break;
 	case WORST_FIT:
 		break;
@@ -96,7 +117,7 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 
 void MemoryManager::release( int *hole )
 {
-
+	hole_set_tag(hole, HOLE_FREE);
 }
 
 void MemoryManager::writeHole( int *location, int *predecessor, int size, int tag, int *successor )
