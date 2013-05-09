@@ -1,11 +1,11 @@
-#pragma once
+#include "stdafx.h"
 
 #include "Hole.h"
 #include "MemoryManager.h"
 
 int *hole_get_predecessor(int *start)
 {
-	return start;
+	return (int *) *start;
 }
 
 int hole_get_size(int *start)
@@ -15,10 +15,10 @@ int hole_get_size(int *start)
 
 int hole_get_tag(int *start)
 {
-	return *(start + hole_get_size(start) + 1);
+	return *(start + hole_get_size(start) + 2);
 }
 
 int *hole_get_successor(int *start)
 {
-	return (start + hole_get_size(start) + 2);
+	return (int *) *(start + hole_get_size(start) + 3);
 }

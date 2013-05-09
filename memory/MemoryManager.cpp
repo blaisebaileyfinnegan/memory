@@ -29,6 +29,8 @@ MemoryManager::MemoryManager( int memSize )
 	// Allocate a free hole memSize - 4
 	writeHole(this->memory_, this->memory_, memSize - METADATA_SIZE, HOLE_FREE, this->memory_);
 	this->head_ = this->memory_;
+	this->request(4);
+	this->request(4);
 }
 
 
@@ -39,15 +41,14 @@ MemoryManager::~MemoryManager(void)
 
 int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*/ )
 {
-	int words = size + (size % 4); // Round to the nearest factor of 4
+	int words = (size + (size % 4))/4; // Round to the nearest factor of 4 and then convert to words
 
-	int *location;
+	int *location = (int*)0xDEADBEEF;
+	int *current = this->head_;
 	switch (strategy) 
 	{
-	default:
 	case FIRST_FIT:
-		int *current = this->head_;
-		while (hole_get_tag(current) != HOLE_FREE) {
+		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
 			current = hole_get_successor(current);
 		}
 		if (hole_get_tag(current) == HOLE_ALLOCATED) {
@@ -66,8 +67,26 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 
 
 	// We've chosen the location, now split that hole up into a free and an allocated hole
+	// First step: save the predecessor and successor
+	int *predecessor = hole_get_predecessor(location);
+	int *successor = hole_get_successor(location);
+	int original_size = hole_get_size(location);
 
-	return 0;
+	// Now destroy it
+	this->destroyHole(location);
+
+	// Write the two new holes: 1 allocated, 1 free
+	int *allocated_hole = location;
+	int *free_hole = location + METADATA_SIZE + words;
+	this->writeHole(allocated_hole, predecessor, words, HOLE_ALLOCATED, free_hole);
+
+	// If the original hole's successor is before this free hole, then it was referring to itself.
+	if (successor < free_hole) {
+		successor = free_hole;
+	}
+	this->writeHole(free_hole, allocated_hole, original_size - words - METADATA_SIZE, HOLE_FREE, successor);
+
+	return allocated_hole;
 }
 
 void MemoryManager::release( int *hole )
@@ -89,9 +108,9 @@ void MemoryManager::writeHole( int *location, int *predecessor, int size, int ta
 		*(location + 2 + i) = 0xDEADBEEF;
 	}
 
-	*(location + size + 1) = tag;
+	*(location + size + 2) = tag;
 
-	int *last = location + size + 2;
+	int *last = location + size + 3;
 	*last = (int) successor;
 }
 
