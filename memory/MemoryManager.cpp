@@ -33,7 +33,15 @@ MemoryManager::MemoryManager( int memSize )
 
 	// The following is for testing:
 #ifdef _DEBUG
-	this->request(7*4);
+	int *holes[5];
+	for (int i = 0; i < 5; i++) {
+		holes[i] = this->request(16*4);
+	}
+
+	this->release(holes[1]);
+	this->release(holes[0]);
+	this->release(holes[3]);
+	this->request(16*4, BEST_FIT);
 #endif
 }
 
@@ -95,15 +103,21 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		{
 			// Best-fit allocates the smallest possible free hole
 			// We need to do a linear search across all holes and keep track of the smallest one
+			// We're looping around, so keep a pointer to the first hole
 			int *min_hole_location = NULL;
 			int min_hole_size = INT_MAX;
-			while (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
-				int currentSize = hole_get_size(current);
-				if (currentSize < min_hole_size) {
-					min_hole_location = current;
-					min_hole_size = currentSize;
+
+			int *last = NULL;
+			while (current != last) {
+				if (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
+					int currentSize = hole_get_size(current);
+					if (currentSize < min_hole_size) {
+						min_hole_location = current;
+						min_hole_size = currentSize;
+					}
 				}
 
+				last = current;
 				current = hole_get_successor(current);
 			}
 			if (!min_hole_location || hole_get_tag(min_hole_location) == HOLE_ALLOCATED) {
@@ -119,43 +133,88 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	}
 
 
-	// We've chosen the location, now split that hole up into a free and an allocated hole
-	// First step: save the predecessor and successor
+	// We've chosen the location
+	// Now, if the there's enough room left over past the end after we allocate the hole, we must
+	// write a free hole to that 
 	int *predecessor = hole_get_predecessor(location);
 	int *successor = hole_get_successor(location);
-	int original_size = hole_get_size(location);
+	int allocated_hole_size = words + METADATA_SIZE;
 
-	// Now destroy it
-	this->destroyHole(location);
-
-	// Write the two new holes: 1 allocated, 1 free (if possible)
-	int *allocated_hole = location;
-
-	// Make sure we actually have space for a free hole;
-	int *free_hole = location + METADATA_SIZE + words;
-	if (free_hole > this->memory_ + this->size_ - METADATA_SIZE) {
-		free_hole = allocated_hole;
+	// Calculate space after
+	int space;
+	if (successor != location) {
+		// In the case there's an actual hole after us
+		space = successor - (location + allocated_hole_size);
+	} else {
+		space = (this->memory_ + this->size_) - (location + allocated_hole_size);
 	}
 
-	this->writeHole(allocated_hole, predecessor, words, HOLE_ALLOCATED, free_hole);
+	this->destroyHole(location);
+	if (space < 4) {
+		this->writeHole(location, predecessor, words, HOLE_ALLOCATED, successor);
+	} else {
+		int *free_hole = location + METADATA_SIZE + words;
+		this->writeHole(location, predecessor, words, HOLE_ALLOCATED, free_hole);
 
-	if (free_hole != allocated_hole) {
-		// If the original hole's successor is before this free hole, then it was referring to itself.
+		// If the successor is before the free_hole, then that means there's nothing after us
 		if (successor < free_hole) {
 			successor = free_hole;
 		}
-		this->writeHole(free_hole, allocated_hole, original_size - words - METADATA_SIZE, HOLE_FREE, successor);
+		this->writeHole(free_hole, location, space - METADATA_SIZE, HOLE_FREE, successor);
 	}
 
 	// For use with next-fit algorithm
-	this->last_ = allocated_hole;
+	this->last_ = location;
 
-	return allocated_hole;
+	return location;
 }
 
 void MemoryManager::release( int *hole )
 {
 	hole_set_tag(hole, HOLE_FREE);
+
+	// Check if the holes next to us are free. If so, join those babies.
+	int *predecessor = hole_get_predecessor(hole);
+	int *successor = hole_get_successor(hole);
+
+	if ((predecessor != hole) && hole_get_tag(predecessor) == HOLE_FREE) {
+		// Overwrite both holes with one new one:
+		// We're joining two holes together, so we only need 1 metadata now instead of 2
+		this->writeHole(predecessor, hole_get_predecessor(predecessor), hole_get_size(predecessor) + hole_get_size(hole) + METADATA_SIZE, HOLE_FREE, successor); 
+		hole = predecessor;
+	}
+
+	if ((successor != hole) && hole_get_tag(successor) == HOLE_FREE) {
+		// Overwrite both holes with one new one:
+		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(successor) + METADATA_SIZE, HOLE_FREE, hole_get_successor(successor));
+	}
+
+	// There's a case where we may have a free memory less than 4 words long (it's not recognized as a hole since
+	// there's not enough room for metadata. Find that and join it also. This should can be either be for:
+	// 1) If the hole is at the very end of memory
+	// 2) The hole can also be preceded by free memory less than 4 words long
+
+	// See if there's any space in front of us
+	predecessor = hole_get_predecessor(hole);
+	if (predecessor != hole) {
+		int space_before = hole - (predecessor + METADATA_SIZE + hole_get_size(predecessor));
+		if (space_before > 0 && space_before < 4) {
+			// Join it
+			this->writeHole(hole - space_before, predecessor, hole_get_size(hole) + space_before, HOLE_FREE, hole_get_successor(hole));
+			hole = hole - space_before;
+		}
+	}
+
+	// See if there's any space at end
+	successor = hole_get_successor(hole);
+	if (successor == hole) {
+		int space_after = (this->memory_ + this->size_) - (hole + hole_get_size(hole) + 4); 
+		if (space_after > 0 && space_after < 4) {
+			// Join it
+			this->writeHole(hole, hole_get_predecessor(hole), hole_get_size(hole) + space_after, HOLE_FREE, successor);
+		}
+	}
+
 }
 
 void MemoryManager::writeHole( int *location, int *predecessor, int size, int tag, int *successor )
@@ -192,7 +251,9 @@ char *MemoryManager::toString()
 	char *buffer = (char *) calloc(sizeof(int)*3, this->size_);
 	for (int i = 0; i < this->size_; i++) {
 		char number[256];
-		sprintf_s(number, 256, "%d", *(this->memory_ + i));
+		int memory = *(this->memory_ + i);
+		memory = (memory == 0xDEADBEEF) ? -1 : memory;
+		sprintf_s(number, 256, "%d", memory);
 		sprintf_s(buffer + strlen(buffer), strlen(number) + 4, "%s, ", number);
 	}
 

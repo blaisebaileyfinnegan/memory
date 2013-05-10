@@ -8,7 +8,7 @@
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	MemoryManager *manager = new MemoryManager(15);
+	MemoryManager *manager = new MemoryManager(100);
 
 	delete manager;
 	return 0;
