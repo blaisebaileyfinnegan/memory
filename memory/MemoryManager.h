@@ -25,6 +25,13 @@ public:
 	int *request(unsigned int size, Strategy strategy = FIRST_FIT);
 	void release(int *hole);
 
+	int getSize();
+
+	int getUtilization();
+	float getUtilizationFraction();
+
+	inline int getLastRequestCost();
+
 	char *toString();
 
 private:
@@ -40,4 +47,5 @@ private:
 
 	int *memory_;	// In all its glory.
 	int size_;
+	int cost_;
 };

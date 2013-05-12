@@ -25,6 +25,7 @@ MemoryManager::MemoryManager( int memSize )
 	// memSize is number of words we want. malloc() takes bytes as input
 	this->memory_ = (int*) malloc(memSize * 4);
 	this->size_ = memSize;
+	this->cost_ = 0;
 
 	// Allocate a free hole memSize - 4
 	writeHole(this->memory_, this->memory_, memSize - METADATA_SIZE, HOLE_FREE, this->memory_);
@@ -41,7 +42,7 @@ MemoryManager::MemoryManager( int memSize )
 	this->release(holes[1]);
 	this->release(holes[0]);
 	this->release(holes[3]);
-	this->request(16*4, BEST_FIT);
+	this->request(16*4, WORST_FIT);
 #endif
 }
 
@@ -57,6 +58,7 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 
 	int *location = (int*)0xDEADBEEF;
 	int *current = this->head_;
+	int cost = 1; // Keep track of the number of holes examined.
 	switch (strategy) 
 	{
 	case NEXT_FIT:
@@ -64,11 +66,13 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		// We need to cycle through until we reach our original, if we didn't find a suitable hole
 		current = this->last_;
 		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+			cost++;
 			int *successor = hole_get_successor(current);
 			if (successor == current) {
 				// We reached the end! Start at beginning
 				current = this->head_;
 				while (current != this->last_ && hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+					cost++;
 					current = hole_get_successor(current);
 				}
 			} else {
@@ -84,6 +88,7 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		break;
 	case FIRST_FIT:
 		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+			cost++;
 			int *successor = hole_get_successor(current);
 			if (successor == current) {
 				// We reached the end!
@@ -109,6 +114,7 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 
 			int *last = NULL;
 			while (current != last) {
+				cost++;
 				if (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
 					int currentSize = hole_get_size(current);
 					if (currentSize < min_hole_size) {
@@ -129,6 +135,30 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 		}
 		break;
 	case WORST_FIT:
+		// Worst-fit allocates the largest possible free hole
+		// We need to do a linear search across all holes and keep track of the largest one
+		// We're looping around, so keep a pointer to the first hole
+		int *max_hole_location = NULL;
+		int max_hole_size = INT_MIN;
+		int *last = NULL;
+		while (current != last) {
+			cost++;
+			if (hole_get_tag(current) == HOLE_FREE && hole_get_size(current) >= words) {
+				int currentSize = hole_get_size(current);
+				if (currentSize > max_hole_size) {
+					max_hole_location = current;
+					max_hole_size = currentSize;
+				}
+			}
+			last = current;
+			current = hole_get_successor(current);
+		}
+		if (!max_hole_location || hole_get_tag(max_hole_location) == HOLE_ALLOCATED) {
+			// No space available!
+			return NULL;
+		} else {
+			location = max_hole_location;
+		}
 		break;
 	}
 
@@ -165,6 +195,8 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 
 	// For use with next-fit algorithm
 	this->last_ = location;
+
+	this->cost_ = cost;
 
 	return location;
 }
@@ -214,7 +246,6 @@ void MemoryManager::release( int *hole )
 			this->writeHole(hole, hole_get_predecessor(hole), hole_get_size(hole) + space_after, HOLE_FREE, successor);
 		}
 	}
-
 }
 
 void MemoryManager::writeHole( int *location, int *predecessor, int size, int tag, int *successor )
@@ -262,6 +293,38 @@ char *MemoryManager::toString()
 	return buffer;
 }
 
+int MemoryManager::getUtilization()
+{
+	// Do a linear search counting all block sizes
+	int utilization = 0;
+	int *previous = NULL;
+	int *current = this->head_;
+	do {
+		if (hole_get_tag(current) == HOLE_ALLOCATED) {
+			utilization += hole_get_size(current) + METADATA_SIZE;
+		}
+		previous = current;
+		current = hole_get_successor(current);
+	} while (current != previous);
+
+	return utilization;
+}
+
+float MemoryManager::getUtilizationFraction()
+{
+	return static_cast<float> (getUtilization() / this->getSize();
+}
+
+int MemoryManager::getLastRequestCost()
+{
+	return this->cost_;
+}
+
+int MemoryManager::getSize()
+{
+	return this->size_;
+}
+
 extern "C" {
 	__declspec(dllexport) MemoryManager *memory_manager_new(int memSize) 
 	{ 
@@ -281,5 +344,26 @@ extern "C" {
 	__declspec(dllexport) char *memory_manager_to_string(MemoryManager *manager)
 	{
 		return manager->toString();
+	}
+
+	__declspec(dllexport) int memory_manager_get_utilization(MemoryManager *manager)
+	{
+		return manager->getUtilization();
+	}
+
+	/*
+	__declspec(dllexport) float memory_manager_get_utilization_fraction(MemoryManager *manager)
+	{
+		return manager->getUtilizationFraction();
+	}
+	*/
+	__declspec(dllexport) int memory_manager_get_last_request_cost(MemoryManager *manager)
+	{
+		return manager->getLastRequestCost();
+	}
+
+	__declspec(dllexport) int memory_manager_get_size(MemoryManager *manager)
+	{
+		return manager->getSize();
 	}
 };

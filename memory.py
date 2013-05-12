@@ -10,6 +10,8 @@
 #-------------------------------------------------------------------------------
 #!/usr/bin/env python
 
+from __future__ import division
+
 import ctypes
 from ctypes import *
 
@@ -31,8 +33,20 @@ class MemoryManager(object):
     def release(self, location):
         dll.memory_manager_release(self.obj, location)
 
-    def toString(self):
+    def to_string(self):
         return c_char_p(dll.memory_manager_to_string(self.obj))
+
+    def get_utilization(self):
+        return dll.memory_manager_get_utilization(self.obj)
+
+    def get_utilization_fraction(self):
+        return self.get_utilization()/self.get_size()
+
+    def get_last_request_cost(self):
+        return dll.memory_manager_get_last_request_cost(self.obj)
+
+    def get_size(self):
+        return dll.memory_manager_get_size(self.obj)
 
 class Simulator(object):
     def __init__(self, size, a, d, strategy, sim_step):
@@ -48,11 +62,21 @@ def main():
     manager.release(pointers[1])
     manager.release(pointers[0])
     manager.release(pointers[3])
-    manager.request(16*4, BEST_FIT)
+    manager.request(16*4, FIRST_FIT)
+    manager.request(16*4, FIRST_FIT)
+    manager.request(16*4, FIRST_FIT)
     print("Hole addresses (in order):")
     print(repr(pointers))
     print("Raw memory:")
-    print(manager.toString().value)
+    print(manager.to_string().value)
+    print("Size:")
+    print(manager.get_size())
+    print("Last Request Cost:")
+    print(manager.get_last_request_cost())
+    print("Utilization:")
+    print(manager.get_utilization())
+    print("Utilization fraction:")
+    print(manager.get_utilization_fraction())
     pass
 
 if __name__ == '__main__':
