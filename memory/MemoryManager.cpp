@@ -257,10 +257,12 @@ void MemoryManager::release( int *hole )
 			successor = hole_get_successor(successor);
 		}
 
-		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(hole_get_successor(hole)) + METADATA_SIZE, HOLE_FREE, successor);
-		if (this->last_ == successor) {
+		if (this->last_ == hole_get_successor(hole)) {
 			this->last_ = hole;
 		}
+
+		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(hole_get_successor(hole)) + METADATA_SIZE, HOLE_FREE, successor);
+
 
 		// Since there's one less hole, fix the predecessor tag of the hole after us
 		if (successor != hole) {

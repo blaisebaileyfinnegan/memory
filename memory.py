@@ -85,9 +85,9 @@ class Simulator(object):
         requests = 0
 
         for i in range(0, self.sim_step):
-            #print(i)
+            print(i)
             size = self.next_request_size()
-            #print("Request: " + repr(size))
+            print("Request: " + repr(size))
             location = self.manager.request(size, self.strategy)
 
             cost = cost + self.manager.get_last_request_cost()
@@ -97,7 +97,7 @@ class Simulator(object):
                 self.blocks.append(location)
 
                 size = self.next_request_size()
-                #print("Request: " + repr(size))
+                print("Request: " + repr(size))
                 location = self.manager.request(size, self.strategy)
 
                 cost = cost + self.manager.get_last_request_cost()
