@@ -27,3 +27,13 @@ void hole_set_tag(int *start, int tag)
 {
 	*(start + hole_get_size(start) + 2) = tag;
 }
+
+void hole_set_successor( int *start, int *successor )
+{
+	*(start + hole_get_size(start) + 3) = (int) successor;
+}
+
+void hole_set_predecessor( int *start, int *predecessor )
+{
+	*start = (int) predecessor;
+}

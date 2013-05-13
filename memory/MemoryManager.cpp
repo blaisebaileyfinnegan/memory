@@ -35,14 +35,20 @@ MemoryManager::MemoryManager( int memSize )
 	// The following is for testing:
 #ifdef _DEBUG
 	int *holes[5];
-	for (int i = 0; i < 5; i++) {
-		holes[i] = this->request(16*4);
-	}
+	holes[0] = this->request(25*4);
+	holes[1] = this->request(24*4);
+	holes[2] = this->request(9*4);
 
-	this->release(holes[1]);
 	this->release(holes[0]);
-	this->release(holes[3]);
-	this->request(16*4, WORST_FIT);
+	this->release(holes[1]);
+
+	holes[0] = this->request(25*4);
+	this->release(holes[0]);
+	holes[0] = this->request(25*4);
+	holes[1] = this->request(24*4);
+	this->release(holes[0]);
+	this->release(holes[1]);
+
 #endif
 }
 
@@ -191,6 +197,12 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 			successor = free_hole;
 		}
 		this->writeHole(free_hole, location, space - METADATA_SIZE, HOLE_FREE, successor);
+
+		// We're adding a new hole, so the free hole's successor is still pointing to the allocated hole--fix that
+		successor = hole_get_successor(free_hole);
+		if (successor != free_hole) {
+			hole_set_predecessor(successor, free_hole);
+		}
 	}
 
 	// For use with next-fit algorithm
@@ -210,15 +222,43 @@ void MemoryManager::release( int *hole )
 	int *successor = hole_get_successor(hole);
 
 	if ((predecessor != hole) && hole_get_tag(predecessor) == HOLE_FREE) {
+		// There's a possibility that we will become our own successor
+		if (successor == hole) {
+			successor = predecessor;
+		}
+
 		// Overwrite both holes with one new one:
 		// We're joining two holes together, so we only need 1 metadata now instead of 2
 		this->writeHole(predecessor, hole_get_predecessor(predecessor), hole_get_size(predecessor) + hole_get_size(hole) + METADATA_SIZE, HOLE_FREE, successor); 
 		hole = predecessor;
+
+		// Since we merge with the predecessor, the successor's predecessor must also point to the new location
+		successor = hole_get_successor(hole);
+		if (successor != hole) {
+			hole_set_predecessor(successor, hole);
+		}
+
+		// Since our offset moved, fix the successor tag of the hole before us
+		predecessor = hole_get_predecessor(hole);
+		if (predecessor != hole) {
+			hole_set_successor(predecessor, hole);
+		}
 	}
 
 	if ((successor != hole) && hole_get_tag(successor) == HOLE_FREE) {
 		// Overwrite both holes with one new one:
-		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(successor) + METADATA_SIZE, HOLE_FREE, hole_get_successor(successor));
+		if (successor == hole_get_successor(successor)) {
+			successor = hole;
+		} else {
+			successor = hole_get_successor(successor);
+		}
+
+		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(hole_get_successor(hole)) + METADATA_SIZE, HOLE_FREE, successor);
+
+		// Since there's one less hole, fix the predecessor tag of the hole after us
+		if (successor != hole) {
+			hole_set_predecessor(successor, hole);
+		}
 	}
 
 	// There's a case where we may have a free memory less than 4 words long (it's not recognized as a hole since
@@ -234,6 +274,9 @@ void MemoryManager::release( int *hole )
 			// Join it
 			this->writeHole(hole - space_before, predecessor, hole_get_size(hole) + space_before, HOLE_FREE, hole_get_successor(hole));
 			hole = hole - space_before;
+
+			// Since our offset moved, we need to fix the successor tag of the hole before us
+			hole_set_successor(predecessor, hole);
 		}
 	}
 
@@ -312,7 +355,7 @@ int MemoryManager::getUtilization()
 
 float MemoryManager::getUtilizationFraction()
 {
-	return static_cast<float> (getUtilization() / this->getSize();
+	return static_cast<float> (getUtilization()) / this->getSize();
 }
 
 int MemoryManager::getLastRequestCost()
@@ -325,7 +368,8 @@ int MemoryManager::getSize()
 	return this->size_;
 }
 
-extern "C" {
+extern "C" 
+{
 	__declspec(dllexport) MemoryManager *memory_manager_new(int memSize) 
 	{ 
 		return new MemoryManager(memSize); 

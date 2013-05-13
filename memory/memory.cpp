@@ -1,5 +1,7 @@
 // memory.cpp : Defines the entry point for the console application.
 //
+// Build as debug to test through main
+// Build as release to export functions for python
 
 #include "stdafx.h"
 
