@@ -17,6 +17,7 @@ from ctypes import *
 
 import sys
 import random
+import math
 
 FIRST_FIT = 0
 NEXT_FIT = 1
@@ -54,7 +55,7 @@ class MemoryManager(object):
         return dll.memory_manager_get_size(self.obj)
 
 class Results(object):
-    def __init(self, utilization_fractions, cost, requests):
+    def __init__(self, utilization_fractions, cost, requests):
         self.utilization_fractions = utilization_fractions
         self.cost = cost
         self.requests = requests
@@ -71,8 +72,8 @@ class Simulator(object):
     def next_request_size(self):
         max_size = self.manager.get_size() - METADATA_SIZE
         candidate = int(round(random.gauss(self.a, self.d)))
-        while candidate >= max_size * 4:
-            candidate = int(round(random.gauss(self.a, self.d)))
+        while (candidate >= max_size * 4) and candidate <= 0:
+            candidate = int(math.floor(random.gauss(self.a, self.d)))
         return candidate
 
     def get_random_block(self):
@@ -87,9 +88,9 @@ class Simulator(object):
             print(i)
             size = self.next_request_size()
             print("Request: " + repr(size))
-            print(self.manager.to_string().value)
+            #print(self.manager.to_string().value)
             location = self.manager.request(size, self.strategy)
-            print("Location: " + repr(location))
+            #print("Location: " + repr(location))
 
             cost = cost + self.manager.get_last_request_cost()
             requests = requests + 1
@@ -99,20 +100,20 @@ class Simulator(object):
 
                 size = self.next_request_size()
                 print("Request: " + repr(size))
-                print(self.manager.to_string().value)
+                #print(self.manager.to_string().value)
                 location = self.manager.request(size, self.strategy)
-                print("Location: " + repr(location))
+                #print("Location: " + repr(location))
 
                 cost = cost + self.manager.get_last_request_cost()
                 requests = requests + 1
 
             utilization_fractions.append(self.manager.get_utilization_fraction())
-            print(self.blocks)
+            #print(self.blocks)
             block = self.get_random_block()
-            print(self.manager.to_string().value)
-            print("Releasing block: " + repr(block))
+            #print(self.manager.to_string().value)
+            #print("Releasing block: " + repr(block))
             self.manager.release(block)
-            print(self.manager.to_string().value)
+            #print(self.manager.to_string().value)
 
         results = Results(utilization_fractions, cost, requests)
         return results

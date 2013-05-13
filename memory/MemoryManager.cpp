@@ -271,12 +271,22 @@ void MemoryManager::release( int *hole )
 	if (predecessor != hole) {
 		int space_before = hole - (predecessor + METADATA_SIZE + hole_get_size(predecessor));
 		if (space_before > 0 && space_before < 4) {
+			// Are we our own successor, if so: we want it to point to the new location
+			successor = hole_get_successor(hole);
+			if (successor == hole) {
+				successor = hole - space_before;
+			} else {
+				// if not, then we should change the successor's predecessor tag to the new location
+				hole_set_predecessor(successor, hole - space_before);
+			}
+
 			// Join it
-			this->writeHole(hole - space_before, predecessor, hole_get_size(hole) + space_before, HOLE_FREE, hole_get_successor(hole));
+			this->writeHole(hole - space_before, predecessor, hole_get_size(hole) + space_before, HOLE_FREE, successor);
 			hole = hole - space_before;
 
 			// Since our offset moved, we need to fix the successor tag of the hole before us
 			hole_set_successor(predecessor, hole);
+
 		}
 	}
 
