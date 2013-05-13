@@ -35,20 +35,13 @@ MemoryManager::MemoryManager( int memSize )
 	// The following is for testing:
 #ifdef _DEBUG
 	int *holes[5];
-	holes[0] = this->request(25*4);
-	holes[1] = this->request(24*4);
-	holes[2] = this->request(9*4);
-
+	holes[0] = this->request(80, NEXT_FIT);
+	holes[1] = this->request(80, NEXT_FIT);
+	holes[2] = this->request(160, NEXT_FIT);
 	this->release(holes[0]);
+	holes[0] = this->request(80, NEXT_FIT);
 	this->release(holes[1]);
-
-	holes[0] = this->request(25*4);
 	this->release(holes[0]);
-	holes[0] = this->request(25*4);
-	holes[1] = this->request(24*4);
-	this->release(holes[0]);
-	this->release(holes[1]);
-
 #endif
 }
 
@@ -68,28 +61,36 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	switch (strategy) 
 	{
 	case NEXT_FIT:
-		// Next-fit algorithm starts off at the last place we looked
-		// We need to cycle through until we reach our original, if we didn't find a suitable hole
-		current = this->last_;
-		while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
-			cost++;
-			int *successor = hole_get_successor(current);
-			if (successor == current) {
-				// We reached the end! Start at beginning
-				current = this->head_;
-				while (current != this->last_ && hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
-					cost++;
-					current = hole_get_successor(current);
+		{
+			// Next-fit algorithm starts off at the last place we looked
+			// We need to cycle through until we reach our original, if we didn't find a suitable hole
+			current = this->last_;
+			int *stop_here = NULL;
+			while (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+				cost++;
+				if (stop_here == NULL) {
+					stop_here = current;
+				} else if (stop_here == current) {
+					break;
 				}
-			} else {
-				current = successor;
+
+				int *successor = hole_get_successor(current);
+				if (successor == current) {
+					if (this->head_ == successor) {
+						break;
+					} else {
+						current = this->head_;
+					}
+				} else {
+					current = successor;
+				}
 			}
-		}
-		if (hole_get_tag(current) == HOLE_ALLOCATED || current == this->last_) {
-			// No space available!
-			return NULL;
-		} else {
-			location = current;
+
+			if (hole_get_tag(current) == HOLE_ALLOCATED || hole_get_size(current) < words) {
+				return NULL;
+			} else {
+				location = current;
+			}
 		}
 		break;
 	case FIRST_FIT:
@@ -206,7 +207,7 @@ int *MemoryManager::request( unsigned int size, Strategy strategy /*= FIRST_FIT*
 	}
 
 	// For use with next-fit algorithm
-	this->last_ = location;
+	this->last_ = hole_get_successor(location);
 
 	this->cost_ = cost;
 
@@ -229,7 +230,10 @@ void MemoryManager::release( int *hole )
 
 		// Overwrite both holes with one new one:
 		// We're joining two holes together, so we only need 1 metadata now instead of 2
-		this->writeHole(predecessor, hole_get_predecessor(predecessor), hole_get_size(predecessor) + hole_get_size(hole) + METADATA_SIZE, HOLE_FREE, successor); 
+		this->writeHole(predecessor, hole_get_predecessor(predecessor), hole_get_size(predecessor) + hole_get_size(hole) + METADATA_SIZE, HOLE_FREE, successor);
+		if (this->last_ == hole) {
+			this->last_ = predecessor;
+		}
 		hole = predecessor;
 
 		// Since we merge with the predecessor, the successor's predecessor must also point to the new location
@@ -254,6 +258,9 @@ void MemoryManager::release( int *hole )
 		}
 
 		this->writeHole(hole, predecessor, hole_get_size(hole) + hole_get_size(hole_get_successor(hole)) + METADATA_SIZE, HOLE_FREE, successor);
+		if (this->last_ == successor) {
+			this->last_ = hole;
+		}
 
 		// Since there's one less hole, fix the predecessor tag of the hole after us
 		if (successor != hole) {
@@ -282,6 +289,10 @@ void MemoryManager::release( int *hole )
 
 			// Join it
 			this->writeHole(hole - space_before, predecessor, hole_get_size(hole) + space_before, HOLE_FREE, successor);
+			if (this->last_ == hole) {
+				this->last_ = hole - space_before;
+			}
+
 			hole = hole - space_before;
 
 			// Since our offset moved, we need to fix the successor tag of the hole before us

@@ -71,8 +71,8 @@ class Simulator(object):
 
     def next_request_size(self):
         max_size = self.manager.get_size() - METADATA_SIZE
-        candidate = int(round(random.gauss(self.a, self.d)))
-        while (candidate >= max_size * 4) and candidate <= 0:
+        candidate = int(math.floor(random.gauss(self.a, self.d)))
+        while (candidate >= max_size * 4) or (candidate <= 0):
             candidate = int(math.floor(random.gauss(self.a, self.d)))
         return candidate
 
@@ -85,12 +85,10 @@ class Simulator(object):
         requests = 0
 
         for i in range(0, self.sim_step):
-            print(i)
+            #print(i)
             size = self.next_request_size()
-            print("Request: " + repr(size))
-            #print(self.manager.to_string().value)
+            #print("Request: " + repr(size))
             location = self.manager.request(size, self.strategy)
-            #print("Location: " + repr(location))
 
             cost = cost + self.manager.get_last_request_cost()
             requests = requests + 1
@@ -99,21 +97,15 @@ class Simulator(object):
                 self.blocks.append(location)
 
                 size = self.next_request_size()
-                print("Request: " + repr(size))
-                #print(self.manager.to_string().value)
+                #print("Request: " + repr(size))
                 location = self.manager.request(size, self.strategy)
-                #print("Location: " + repr(location))
 
                 cost = cost + self.manager.get_last_request_cost()
                 requests = requests + 1
 
             utilization_fractions.append(self.manager.get_utilization_fraction())
-            #print(self.blocks)
             block = self.get_random_block()
-            #print(self.manager.to_string().value)
-            #print("Releasing block: " + repr(block))
             self.manager.release(block)
-            #print(self.manager.to_string().value)
 
         results = Results(utilization_fractions, cost, requests)
         return results
@@ -142,7 +134,7 @@ def test():
     pass
 
 def main():
-    test()
+    #test()
 
     sim = None
     output = None
@@ -153,10 +145,8 @@ def main():
     #   standard deviatoin (bytes),
     #   strategy
     #   sim_step
-    print arg_count
-    if (arg_count == 7):
+    if (arg_count >= 6):
         sim = Simulator(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5]))
-        output = sys.argv[6]
     else:
         memory_size = raw_input("Specify memory size (in words):")
         average_request_size = raw_input("Specify average request size (in bytes):")
@@ -164,10 +154,16 @@ def main():
         strategy = raw_input("Specify strategy (int):")
         sim_step = raw_input("Specify sim_step:")
 
-        output = raw_input("Specify output filepath:")
-
         sim = Simulator(memory_size, average_request_size, standard_deviation, strategy, sim_step)
-    print(sim.drive())
+    results = sim.drive()
+    print("Results")
+    print("-------")
+    print("Total Cost (how many holes searched): " + repr(results.cost))
+    print("Total Number of Requests: " + repr(results.requests))
+    average_utilization = sum(results.utilization_fractions) / len(results.utilization_fractions)
+    print("Average Memory Utilization Fraction: " + repr(average_utilization))
+    average_search_time = results.cost/results.requests
+    print("Average Search Time (Cost divided by Requests): " + repr(average_search_time))
     pass
 
 if __name__ == '__main__':
